@@ -14,6 +14,8 @@
   <img src="https://skillicons.dev/icons?i=git" height="40" alt="git logo" />
   <img width="12" />
   <img src="https://skillicons.dev/icons?i=windows" height="40" alt="windows logo" />
+  <img width="12" />
+  <img src="https://skillicons.dev/icons?i=qt" height="40" alt="windows logo" />
 </div>
 
 ###
@@ -114,7 +116,7 @@ build_and_run.bat
 
 ## Шейдеры
 
-Исходники шейдеров берутся из `../Vulcan/shaders/` относительно корня проекта и компилируются в `shaders/compiled/`:
+Исходники шейдеров берутся из `shaders/` относительно корня проекта и компилируются в `shaders/compiled/`:
 
 | Файл | Роль |
 |------|------|

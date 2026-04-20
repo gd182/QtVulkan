@@ -1,3 +1,4 @@
 build/
 .qtcreator/
 .qmlls.ini
+shaders/compiled/

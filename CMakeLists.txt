@@ -16,8 +16,6 @@ find_package(glm CONFIG QUIET)
 if (NOT TARGET glm::glm)
     find_path(GLM_INCLUDE_FALLBACK glm/glm.hpp
         PATHS
-            "D:/Programming/C++/vcpkg/installed/x64-windows/include"
-            "C:/vcpkg/installed/x64-windows/include"
             "$ENV{VCPKG_ROOT}/installed/x64-windows/include"
             "$ENV{VCPKG_ROOT}/installed/x64-mingw-dynamic/include"
     )
@@ -69,7 +67,7 @@ target_link_libraries(appQtVulkan
 )
 
 # ── Компиляция шейдеров / Compile shaders ─────────────────────────────────
-set(SHADER_SRC_DIR "${CMAKE_SOURCE_DIR}/../Vulcan/shaders")
+set(SHADER_SRC_DIR "${CMAKE_SOURCE_DIR}/shaders")
 set(SHADER_OUT_DIR "${SHADER_SRC_DIR}/compiled")
 
 if (Vulkan_GLSLC_EXECUTABLE)

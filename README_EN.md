@@ -14,6 +14,8 @@
   <img src="https://skillicons.dev/icons?i=git" height="40" alt="git logo" />
   <img width="12" />
   <img src="https://skillicons.dev/icons?i=windows" height="40" alt="windows logo" />
+  <img width="12" />
+  <img src="https://skillicons.dev/icons?i=qt" height="40" alt="windows logo" />
 </div>
 
 ###
@@ -114,7 +116,7 @@ build_and_run.bat
 
 ## Shaders
 
-Shaders are sourced from `../Vulcan/shaders/` relative to the project root and compiled into `shaders/compiled/`:
+Shaders are sourced from `shaders/` relative to the project root and compiled into `shaders/compiled/`:
 
 | File | Role |
 |------|------|
