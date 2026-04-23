@@ -14,18 +14,36 @@ find_package(Vulkan REQUIRED)
 # GLM — header-only
 find_package(glm CONFIG QUIET)
 if (NOT TARGET glm::glm)
-    find_path(GLM_INCLUDE_FALLBACK glm/glm.hpp
-        PATHS
-            "$ENV{VCPKG_ROOT}/installed/x64-windows/include"
-            "$ENV{VCPKG_ROOT}/installed/x64-mingw-dynamic/include"
+    # Build a list of candidate include directories depending on the platform and
+    # package manager (vcpkg, Homebrew, system).
+    set(_GLM_SEARCH_PATHS
+        # vcpkg — Windows
+        "$ENV{VCPKG_ROOT}/installed/x64-windows/include"
+        "$ENV{VCPKG_ROOT}/installed/x64-mingw-dynamic/include"
+        # vcpkg — macOS (Apple Silicon and Intel)
+        "$ENV{VCPKG_ROOT}/installed/arm64-osx/include"
+        "$ENV{VCPKG_ROOT}/installed/x64-osx/include"
+        # vcpkg — Linux
+        "$ENV{VCPKG_ROOT}/installed/x64-linux/include"
+        # Homebrew (macOS — arm64 default prefix)
+        "/opt/homebrew/include"
+        # Homebrew (macOS — Intel legacy prefix)
+        "/usr/local/include"
+        # Common system paths (Linux distros)
+        "/usr/include"
     )
+    find_path(GLM_INCLUDE_FALLBACK glm/glm.hpp PATHS ${_GLM_SEARCH_PATHS})
     if (GLM_INCLUDE_FALLBACK)
         message(STATUS "GLM found via path: ${GLM_INCLUDE_FALLBACK}")
         add_library(glm_iface INTERFACE)
         target_include_directories(glm_iface INTERFACE "${GLM_INCLUDE_FALLBACK}")
         add_library(glm::glm ALIAS glm_iface)
     else()
-        message(FATAL_ERROR "GLM not found. Install with: vcpkg install glm")
+        message(FATAL_ERROR
+            "GLM not found. Install with one of:\n"
+            "  vcpkg: vcpkg install glm\n"
+            "  Homebrew: brew install glm\n"
+            "  apt: sudo apt install libglm-dev")
     endif()
 endif()
 
@@ -51,9 +69,26 @@ qt_add_qml_module(appQtVulkan
 set_target_properties(appQtVulkan PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.example.qtvulkan"
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE TRUE
 )
+
+# On macOS the Vulkan loader needs the MoltenVK ICD layer, which ships inside the
+# VulkanSDK. Tell the loader where to find it so the app works without the SDK
+# being globally installed.
+if (APPLE)
+    find_program(VULKAN_SDK_SETUP "vulkansdk" HINTS "$ENV{VULKAN_SDK}/../..")
+    if (DEFINED ENV{VULKAN_SDK})
+        set_target_properties(appQtVulkan PROPERTIES
+            XCODE_ATTRIBUTE_LD_RUNPATH_SEARCH_PATHS "@executable_path/../Frameworks"
+        )
+        # Copy MoltenVK ICD next to the binary so the loader can find it
+        install(FILES "$ENV{VULKAN_SDK}/lib/libMoltenVK.dylib"
+                DESTINATION $<TARGET_FILE_DIR:appQtVulkan>
+                OPTIONAL)
+    endif()
+endif()
 
 target_include_directories(appQtVulkan PRIVATE src)
 
