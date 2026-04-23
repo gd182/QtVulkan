@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "vk3dSphere.h"
 
@@ -112,6 +113,7 @@ VulkanCore::VulkanCore(VkInstance instance, VkSurfaceKHR surface,
     , width(width)
     , height(height)
 {
+    setupScene();
     initVulkan();
     fpsTime = std::chrono::steady_clock::now();
 }
@@ -131,23 +133,78 @@ void VulkanCore::orbitCamera(float dAzimuth, float dElevation) {
 }
 
 void VulkanCore::resetPhysics() {
-    physics.reset();
+    physicsWorld.resetBodies(initialBodies);
     camera.reset();
 }
 
 void VulkanCore::setElasticity(float e) {
-    physics.setElasticity(e);
+    physicsWorld.setElasticity(e);
 }
 
 // Основной тик / Main tick
 
 void VulkanCore::tick(float dt) {
-    physics.update(dt);
+    physicsWorld.update(dt);
     drawFrame();
     updateFps();
 }
 
 // Инициализация / Initialisation
+
+static constexpr float kGroundY = physics::PhysicsWorld::kGroundY;
+
+void VulkanCore::setupScene()
+{
+    using namespace physics;
+    const float gy = kGroundY;
+
+    // ── Collision planes ──────────────────────────────────────────────────
+
+    // Flat ground
+    CollisionPlane ground;
+    ground.point       = glm::vec3(0.0f, gy, 0.0f);
+    ground.normal      = glm::vec3(0.0f, 1.0f, 0.0f);
+    ground.restitution = 0.6f;
+    ground.friction    = 0.5f;
+    physicsWorld.addPlane(ground);
+
+    // Ramp: 25° incline rising in +X, foot of ramp at x=0, y=gy
+    // Normal = (-sin25°, cos25°, 0)
+    const float sinA = 0.4226f, cosA = 0.9063f;
+    CollisionPlane ramp;
+    ramp.point       = glm::vec3(0.0f, gy, 0.0f);
+    ramp.normal      = glm::vec3(-sinA, cosA, 0.0f);
+    ramp.restitution = 0.35f;
+    ramp.friction    = 0.55f;
+    ramp.bounded     = true;
+    ramp.boundsMin   = glm::vec3( 0.0f, -10.0f, -3.6f);
+    ramp.boundsMax   = glm::vec3( 4.5f,  10.0f,  3.6f);
+    physicsWorld.addPlane(ramp);
+
+    // ── Rigid bodies ──────────────────────────────────────────────────────
+
+    // Sphere — drops onto the ramp
+    RigidBody sphere;
+    sphere.shape       = ShapeType::Sphere;
+    sphere.position    = glm::vec3(1.5f, 4.0f, 0.0f);
+    sphere.radius      = 0.5f;
+    sphere.mass        = 1.0f;
+    sphere.restitution = 0.6f;
+    sphere.friction    = 0.5f;
+
+    // Box — drops onto the flat ground with a slight initial tilt
+    RigidBody box;
+    box.shape       = ShapeType::Box;
+    box.position    = glm::vec3(-1.5f, 5.0f, 0.3f);
+    box.halfExtents = glm::vec3(0.4f, 0.4f, 0.4f);
+    box.mass        = 1.5f;
+    box.restitution = 0.4f;
+    box.friction    = 0.6f;
+    box.orientation = glm::angleAxis(glm::radians(20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+
+    initialBodies = {sphere, box};
+    physicsWorld.resetBodies(initialBodies);
+}
 
 void VulkanCore::initVulkan() {
     pfnCreateDebug = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
@@ -231,7 +288,23 @@ void VulkanCore::createLogicalDevice() {
         qcis.push_back(qci);
     }
 
-    const std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    std::vector<const char*> devExts = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+    // VK_KHR_portability_subset must be enabled when the device advertises it.
+    // MoltenVK (macOS) always exposes it; ignoring it triggers a validation error.
+    {
+        uint32_t n = 0;
+        vkEnumerateDeviceExtensionProperties(phys, nullptr, &n, nullptr);
+        std::vector<VkExtensionProperties> available(n);
+        vkEnumerateDeviceExtensionProperties(phys, nullptr, &n, available.data());
+        for (const auto& e : available) {
+            if (std::strcmp(e.extensionName, "VK_KHR_portability_subset") == 0) {
+                devExts.push_back("VK_KHR_portability_subset");
+                break;
+            }
+        }
+    }
+
     VkPhysicalDeviceFeatures feats{};
     VkDeviceCreateInfo dci{ VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
     dci.queueCreateInfoCount    = static_cast<uint32_t>(qcis.size());
@@ -608,7 +681,7 @@ void VulkanCore::createMeshBuffers() {
     {
         std::vector<typesData::Vertex> verts;
         std::vector<uint32_t>          inds;
-        // Радиус 1.0; масштаб kBallRadius применяется через матрицу модели
+        // Радиус 1.0; масштаб ball.radius применяется через матрицу модели
         vkObj::Vk3dSphere::makeUVSphere(20, 40, 1.0f, {0.2f, 0.6f, 1.0f}, verts, inds);
         indexCount = static_cast<uint32_t>(inds.size());
 
@@ -638,58 +711,109 @@ void VulkanCore::createMeshBuffers() {
         vkDestroyBuffer(device, iS, nullptr); vkFreeMemory(device, iSM, nullptr);
     }
 
-    // Земля / Ground plane
+    // Helper: stage + upload a static mesh to device-local buffers
+    auto uploadMesh = [&](const std::vector<typesData::Vertex>& verts,
+                          const std::vector<uint32_t>&          inds,
+                          VkBuffer& outVBuf, VkDeviceMemory& outVMem,
+                          VkBuffer& outIBuf, VkDeviceMemory& outIMem,
+                          uint32_t& outIndexCount)
     {
-        const float gy  = physics::BallPhysics::kGroundY;
-        const float ext = 4.0f; // полуразмер плоскости / half-size
-        // Нормаль (0,1,0), цвет серо-зелёный / normal (0,1,0), grey-green colour
-        const std::array<float, 3> col = {0.3f, 0.45f, 0.3f};
-        std::vector<typesData::Vertex> verts = {
-            {{ ext, gy, ext }, { 0.f, 1.f, 0.f }, { col[0], col[1], col[2] }},
-            {{ ext, gy, -ext }, { 0.f, 1.f, 0.f }, { col[0], col[1], col[2] }},
-            {{ -ext, gy, -ext }, { 0.f, 1.f, 0.f }, { col[0], col[1], col[2] }},
-            {{ -ext, gy, ext }, { 0.f, 1.f, 0.f }, { col[0], col[1], col[2] }},
-        };
-        std::vector<uint32_t> inds = { 0, 1, 2, 0, 2, 3 };
-        groundIndexCount = static_cast<uint32_t>(inds.size());
-
+        outIndexCount = static_cast<uint32_t>(inds.size());
         const VkDeviceSize vSize = verts.size() * sizeof(typesData::Vertex);
         const VkDeviceSize iSize = inds.size()  * sizeof(uint32_t);
-
-        VkBuffer       vS{}, iS{};
-        VkDeviceMemory vSM{}, iSM{};
+        VkBuffer vS{}, iS{}; VkDeviceMemory vSM{}, iSM{};
         createBuffer(vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     vS, vSM);
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vS, vSM);
         createBuffer(iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     iS, iSM);
-
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, iS, iSM);
         void* p = nullptr;
         vkMapMemory(device, vSM, 0, vSize, 0, &p); std::memcpy(p, verts.data(), vSize); vkUnmapMemory(device, vSM);
         vkMapMemory(device, iSM, 0, iSize, 0, &p); std::memcpy(p, inds.data(),  iSize); vkUnmapMemory(device, iSM);
-
         createBuffer(vSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, groundVBuf, groundVMem);
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outVBuf, outVMem);
         createBuffer(iSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT  | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, groundIBuf, groundIMem);
-        copyBuffer(vS, groundVBuf, vSize);
-        copyBuffer(iS, groundIBuf, iSize);
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outIBuf, outIMem);
+        copyBuffer(vS, outVBuf, vSize); copyBuffer(iS, outIBuf, iSize);
         vkDestroyBuffer(device, vS, nullptr); vkFreeMemory(device, vSM, nullptr);
         vkDestroyBuffer(device, iS, nullptr); vkFreeMemory(device, iSM, nullptr);
+    };
+
+    // Земля / Ground plane  (CCW for normal (0,1,0), grey-green)
+    {
+        const float gy = kGroundY, ext = 4.0f;
+        const float cr = 0.3f, cg = 0.45f, cb = 0.3f;
+        std::vector<typesData::Vertex> verts = {
+            {{ -ext, gy, -ext }, { 0.f, 1.f, 0.f }, { cr, cg, cb }},
+            {{ -ext, gy, ext }, { 0.f, 1.f, 0.f }, { cr, cg, cb }},
+            {{  ext, gy,  ext }, { 0.f, 1.f, 0.f }, { cr, cg, cb }},
+            {{ ext, gy,  -ext }, { 0.f, 1.f, 0.f }, { cr, cg, cb }},
+        };
+        std::vector<uint32_t> inds = { 0, 1, 2, 0, 2, 3 };
+        uploadMesh(verts, inds, groundVBuf, groundVMem, groundIBuf, groundIMem, groundIndexCount);
+    }
+
+    // Пандус / Ramp  (25° incline rising in +X, normal = (-sin25°, cos25°, 0), sandy)
+    {
+        const float tanA = 0.4663f, sinA = 0.4226f, cosA = 0.9063f;
+        const float x0 = 0.0f, x1 = 4.0f;
+        const float y0 = kGroundY, y1 = kGroundY + (x1 - x0) * tanA;
+        const float zE = 3.5f;
+        const float cr = 0.75f, cg = 0.55f, cb = 0.3f;
+        std::vector<typesData::Vertex> verts = {
+            {{ x0, y0, -zE }, { -sinA, cosA, 0.f }, { cr, cg, cb }},
+            {{ x0, y0,  zE }, { -sinA, cosA, 0.f }, { cr, cg, cb }},
+            {{ x1, y1,  zE }, { -sinA, cosA, 0.f }, { cr, cg, cb }},
+            {{ x1, y1, -zE }, { -sinA, cosA, 0.f }, { cr, cg, cb }},
+        };
+        std::vector<uint32_t> inds = { 0, 1, 2, 0, 2, 3 };
+        uploadMesh(verts, inds, rampVBuf, rampVMem, rampIBuf, rampIMem, rampIndexCount);
+    }
+
+    // Единичный куб / Unit box  (±1 local space, scaled by halfExtents in model matrix, red)
+    {
+        const float cr = 0.85f, cg = 0.3f, cb = 0.2f;
+        std::vector<typesData::Vertex> verts;
+        std::vector<uint32_t>          inds;
+
+        // addFace: 4 corners + outward normal → 4 verts + 2 triangles (CCW winding verified)
+        auto addFace = [&](float ax, float ay, float az,
+                           float bx, float by, float bz,
+                           float cx, float cy, float cz,
+                           float dx, float dy, float dz,
+                           float nx, float ny, float nz)
+        {
+            const uint32_t base = static_cast<uint32_t>(verts.size());
+            verts.push_back({{ ax, ay, az }, { nx, ny, nz }, { cr, cg, cb }});
+            verts.push_back({{ bx, by, bz }, { nx, ny, nz }, { cr, cg, cb }});
+            verts.push_back({{ cx, cy, cz }, { nx, ny, nz }, { cr, cg, cb }});
+            verts.push_back({{ dx, dy, dz }, { nx, ny, nz }, { cr, cg, cb }});
+            inds.insert(inds.end(), { base, base+1, base+2, base, base+2, base+3 });
+        };
+
+        addFace(-1,1,-1, -1,1,1,  1,1,1,  1,1,-1,   0, 1, 0); // +Y
+        addFace( 1,-1,-1, 1,-1,1,-1,-1,1,-1,-1,-1,   0,-1, 0); // -Y
+        addFace( 1,-1,-1, 1,1,-1, 1,1,1,  1,-1,1,    1, 0, 0); // +X
+        addFace(-1,-1,1,-1,1,1, -1,1,-1,-1,-1,-1,   -1, 0, 0); // -X
+        addFace(-1,-1,1,  1,-1,1, 1,1,1, -1,1,1,    0, 0, 1);  // +Z
+        addFace( 1,-1,-1,-1,-1,-1,-1,1,-1,1,1,-1,   0, 0,-1);  // -Z
+
+        uploadMesh(verts, inds, boxVBuf, boxVMem, boxIBuf, boxIMem, boxIndexCount);
     }
 }
 
 void VulkanCore::destroyMeshBuffers() {
-    if (iBuf) { vkDestroyBuffer(device, iBuf, nullptr); vkFreeMemory(device, iMem, nullptr); }
-    if (vBuf) { vkDestroyBuffer(device, vBuf, nullptr); vkFreeMemory(device, vMem, nullptr); }
-    iBuf = VK_NULL_HANDLE; iMem = VK_NULL_HANDLE;
-    vBuf = VK_NULL_HANDLE; vMem = VK_NULL_HANDLE;
-
-    if (groundIBuf) { vkDestroyBuffer(device, groundIBuf, nullptr); vkFreeMemory(device, groundIMem, nullptr); }
-    if (groundVBuf) { vkDestroyBuffer(device, groundVBuf, nullptr); vkFreeMemory(device, groundVMem, nullptr); }
-    groundIBuf = VK_NULL_HANDLE; groundIMem = VK_NULL_HANDLE;
-    groundVBuf = VK_NULL_HANDLE; groundVMem = VK_NULL_HANDLE;
+    auto destroy = [&](VkBuffer& b, VkDeviceMemory& m) {
+        if (b) { vkDestroyBuffer(device, b, nullptr); vkFreeMemory(device, m, nullptr); }
+        b = VK_NULL_HANDLE; m = VK_NULL_HANDLE;
+    };
+    destroy(iBuf,       iMem);
+    destroy(vBuf,       vMem);
+    destroy(groundIBuf, groundIMem);
+    destroy(groundVBuf, groundVMem);
+    destroy(rampIBuf,   rampIMem);
+    destroy(rampVBuf,   rampVMem);
+    destroy(boxIBuf,    boxIMem);
+    destroy(boxVBuf,    boxVMem);
 }
 
 void VulkanCore::createCommandBuffers() {
@@ -820,26 +944,38 @@ void VulkanCore::recordCommandBuffer(uint32_t i) {
 
     VkDeviceSize off = 0;
 
-    // Земля / Ground
-    {
-        glm::mat4 model(1.0f); // identity — вершины уже в мировых координатах
+    // Вспомогательная лямбда для отрисовки объекта / Helper to draw one object
+    auto drawObject = [&](VkBuffer vb, VkBuffer ib, uint32_t idxCount, const glm::mat4& model) {
         vkCmdPushConstants(cmd[i], pipelineLayout,
                            VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model);
-        vkCmdBindVertexBuffers(cmd[i], 0, 1, &groundVBuf, &off);
-        vkCmdBindIndexBuffer  (cmd[i], groundIBuf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmd[i], groundIndexCount, 1, 0, 0, 0);
-    }
+        vkCmdBindVertexBuffers(cmd[i], 0, 1, &vb, &off);
+        vkCmdBindIndexBuffer  (cmd[i], ib, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(cmd[i], idxCount, 1, 0, 0, 0);
+    };
 
-    // Шар / Ball
-    {
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), physics.getBallPosition())
-                        * glm::scale(glm::mat4(1.0f),
-                                     glm::vec3(physics::BallPhysics::kBallRadius));
-        vkCmdPushConstants(cmd[i], pipelineLayout,
-                           VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &model);
-        vkCmdBindVertexBuffers(cmd[i], 0, 1, &vBuf, &off);
-        vkCmdBindIndexBuffer  (cmd[i], iBuf, 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(cmd[i], indexCount, 1, 0, 0, 0);
+    // Земля / Ground  (world-space verts → identity model)
+    drawObject(groundVBuf, groundIBuf, groundIndexCount, glm::mat4(1.0f));
+
+    // Пандус / Ramp  (world-space verts → identity model)
+    drawObject(rampVBuf, rampIBuf, rampIndexCount, glm::mat4(1.0f));
+
+    // Тела / Physics bodies
+    const auto& bodies = physicsWorld.getBodies();
+    if (bodies.size() >= 1) {
+        // Сфера / Sphere
+        const auto& ball = bodies[0];
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), ball.position)
+                        * glm::mat4_cast(ball.orientation)
+                        * glm::scale(glm::mat4(1.0f), glm::vec3(ball.radius));
+        drawObject(vBuf, iBuf, indexCount, model);
+    }
+    if (bodies.size() >= 2) {
+        // Коробка / Box
+        const auto& box = bodies[1];
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), box.position)
+                        * glm::mat4_cast(box.orientation)
+                        * glm::scale(glm::mat4(1.0f), box.halfExtents);
+        drawObject(boxVBuf, boxIBuf, boxIndexCount, model);
     }
 
     vkCmdEndRenderPass(cmd[i]);

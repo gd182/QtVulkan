@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -38,98 +39,114 @@ public:
     void setElasticity(float e);
 
     // Геттеры / Getters
-    [[nodiscard]] float getElasticity() const noexcept { return physics.getElasticity(); }
-    [[nodiscard]] uint32_t getWidth() const noexcept { return width;}
-    [[nodiscard]] uint32_t getHeight() const noexcept { return height;}
+    [[nodiscard]] float getElasticity() const noexcept { return physicsWorld.getElasticity(); }
+    [[nodiscard]] uint32_t getWidth()  const noexcept { return width; }
+    [[nodiscard]] uint32_t getHeight() const noexcept { return height; }
 
     // Коллбеки / Callbacks
     void setFpsCallback(std::function<void(double)> cb) { fpsCallback = std::move(cb); }
 
 private:
     // Не владеем / Not owned
-    VkInstance instance = VK_NULL_HANDLE;
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkInstance   instance = VK_NULL_HANDLE;
+    VkSurfaceKHR surface  = VK_NULL_HANDLE;
     uint32_t width;
     uint32_t height;
 
     // Устройства / Devices
-    VkPhysicalDevice phys = VK_NULL_HANDLE;
-    VkDevice device = VK_NULL_HANDLE;
-    VkQueue graphicsQ = VK_NULL_HANDLE;
-    VkQueue presentQ = VK_NULL_HANDLE;
-    uint32_t graphicsFamily = 0;
-    uint32_t presentFamily = 0;
+    VkPhysicalDevice phys           = VK_NULL_HANDLE;
+    VkDevice         device         = VK_NULL_HANDLE;
+    VkQueue          graphicsQ      = VK_NULL_HANDLE;
+    VkQueue          presentQ       = VK_NULL_HANDLE;
+    uint32_t         graphicsFamily = 0;
+    uint32_t         presentFamily  = 0;
 
     // Swapchain
-    VkSwapchainKHR swapchain  = VK_NULL_HANDLE;
-    std::vector<VkImage> scImages;
+    VkSwapchainKHR           swapchain  = VK_NULL_HANDLE;
+    std::vector<VkImage>     scImages;
     std::vector<VkImageView> scViews;
-    VkFormat swapFormat = VK_FORMAT_UNDEFINED;
-    VkExtent2D extent = {};
+    VkFormat                 swapFormat = VK_FORMAT_UNDEFINED;
+    VkExtent2D               extent     = {};
 
     // Глубина / Depth
-    VkImage depthImg = VK_NULL_HANDLE;
-    VkDeviceMemory depthMem = VK_NULL_HANDLE;
-    VkImageView depthView = VK_NULL_HANDLE;
+    VkImage        depthImg  = VK_NULL_HANDLE;
+    VkDeviceMemory depthMem  = VK_NULL_HANDLE;
+    VkImageView    depthView = VK_NULL_HANDLE;
 
     // Render pass & framebuffers
-    VkRenderPass renderPass = VK_NULL_HANDLE;
-    std::vector<VkFramebuffer> fbs;
+    VkRenderPass                renderPass = VK_NULL_HANDLE;
+    std::vector<VkFramebuffer>  fbs;
 
     // Дескрипторы & UBO
-    VkDescriptorSetLayout dsl = VK_NULL_HANDLE;
-    VkDescriptorPool dpool = VK_NULL_HANDLE;
+    VkDescriptorSetLayout        dsl   = VK_NULL_HANDLE;
+    VkDescriptorPool             dpool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> dsets;
-    std::vector<VkBuffer> uboBuf;
-    std::vector<VkDeviceMemory> uboMem;
-    std::vector<void*> uboMapped;
+    std::vector<VkBuffer>        uboBuf;
+    std::vector<VkDeviceMemory>  uboMem;
+    std::vector<void*>           uboMapped;
 
     // Пайплайн / Pipeline
     VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-    VkPipeline pipeline = VK_NULL_HANDLE;
+    VkPipeline       pipeline       = VK_NULL_HANDLE;
 
     // Меш шара / Ball mesh
-    VkBuffer vBuf = VK_NULL_HANDLE;
-    VkDeviceMemory vMem = VK_NULL_HANDLE;
-    VkBuffer iBuf = VK_NULL_HANDLE;
-    VkDeviceMemory iMem = VK_NULL_HANDLE;
-    uint32_t indexCount = 0;
+    VkBuffer       vBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory vMem  = VK_NULL_HANDLE;
+    VkBuffer       iBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory iMem  = VK_NULL_HANDLE;
+    uint32_t       indexCount = 0;
 
     // Меш земли / Ground mesh
-    VkBuffer groundVBuf = VK_NULL_HANDLE;
-    VkDeviceMemory groundVMem = VK_NULL_HANDLE;
-    VkBuffer groundIBuf = VK_NULL_HANDLE;
-    VkDeviceMemory groundIMem = VK_NULL_HANDLE;
-    uint32_t groundIndexCount = 0;
+    VkBuffer       groundVBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory groundVMem  = VK_NULL_HANDLE;
+    VkBuffer       groundIBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory groundIMem  = VK_NULL_HANDLE;
+    uint32_t       groundIndexCount = 0;
+
+    // Меш пандуса / Ramp mesh
+    VkBuffer       rampVBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory rampVMem  = VK_NULL_HANDLE;
+    VkBuffer       rampIBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory rampIMem  = VK_NULL_HANDLE;
+    uint32_t       rampIndexCount = 0;
+
+    // Меш коробки / Box mesh
+    VkBuffer       boxVBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory boxVMem  = VK_NULL_HANDLE;
+    VkBuffer       boxIBuf  = VK_NULL_HANDLE;
+    VkDeviceMemory boxIMem  = VK_NULL_HANDLE;
+    uint32_t       boxIndexCount = 0;
 
     // Команды / Commands
-    VkCommandPool cmdPool = VK_NULL_HANDLE;
+    VkCommandPool                cmdPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> cmd;
 
     // Синхронизация / Sync
-    static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-    std::vector<VkSemaphore> imageAvail;
-    std::vector<VkSemaphore> renderDone;
-    std::vector<VkFence> inFlight;
-    std::vector<VkFence> imagesInFlight;
-    int currentFrame = 0;
+    static constexpr int         MAX_FRAMES_IN_FLIGHT = 2;
+    std::vector<VkSemaphore>     imageAvail;
+    std::vector<VkSemaphore>     renderDone;
+    std::vector<VkFence>         inFlight;
+    std::vector<VkFence>         imagesInFlight;
+    int                          currentFrame = 0;
 
     // Сцена / Scene
-    Camera camera;
-    physics::BallPhysics physics;
+    Camera                          camera;
+    physics::PhysicsWorld           physicsWorld;
+    std::vector<physics::RigidBody> initialBodies; // for reset
 
     // FPS
     std::chrono::steady_clock::time_point fpsTime;
-    int fpsCount = 0;
-    std::function<void(double)> fpsCallback;
+    int                                   fpsCount = 0;
+    std::function<void(double)>           fpsCallback;
 
     // Отладка / Debug
-    VkDebugUtilsMessengerEXT debugMsgr = VK_NULL_HANDLE;
-    PFN_vkCreateDebugUtilsMessengerEXT  pfnCreateDebug  = nullptr;
-    PFN_vkDestroyDebugUtilsMessengerEXT pfnDestroyDebug = nullptr;
+    VkDebugUtilsMessengerEXT             debugMsgr    = VK_NULL_HANDLE;
+    PFN_vkCreateDebugUtilsMessengerEXT   pfnCreateDebug  = nullptr;
+    PFN_vkDestroyDebugUtilsMessengerEXT  pfnDestroyDebug = nullptr;
 
     // Инициализация / Init
     void initVulkan();
+    void setupScene();   // build physicsWorld planes + initial bodies
     void setupDebugMessenger();
     void pickPhysicalDevice();
     void createLogicalDevice();
