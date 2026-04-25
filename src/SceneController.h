@@ -10,8 +10,8 @@ class VulkanWindow;
 class SceneController : public QObject {
     Q_OBJECT
 
-    Q_PROPERTY(double fps READ fps NOTIFY fpsChanged)
-    Q_PROPERTY(double elasticity  READ elasticity  NOTIFY elasticityChanged)
+    Q_PROPERTY(double fps READ getFps NOTIFY fpsChanged)
+    Q_PROPERTY(double elasticity READ getElasticity NOTIFY elasticityChanged)
 
 public:
     explicit SceneController(QObject* parent = nullptr);

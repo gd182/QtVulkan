@@ -15,7 +15,9 @@
   <img width="12" />
   <img src="https://skillicons.dev/icons?i=windows" height="40" alt="windows logo" />
   <img width="12" />
-  <img src="https://skillicons.dev/icons?i=qt" height="40" alt="windows logo" />
+  <img src="https://skillicons.dev/icons?i=apple" height="40" alt="macOS logo" />
+  <img width="12" />
+  <img src="https://skillicons.dev/icons?i=qt" height="40" alt="qt logo" />
 </div>
 
 ###
@@ -68,6 +70,7 @@ QtVulkan/
 
 ## Требования
 
+### Windows
 - Windows 10/11 (64-bit)
 - **Qt 6.8+** с модулями Quick и QuickControls2
 - **Vulkan SDK** (1.0+) — предоставляет `glslc` для компиляции шейдеров
@@ -75,16 +78,26 @@ QtVulkan/
 - **CMake 3.20+**
 - GPU с поддержкой Vulkan 1.0
 
+### macOS
+- macOS 12 Monterey или новее
+- **Homebrew** — [brew.sh](https://brew.sh)
+- **Vulkan SDK** — [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home#mac) (включает MoltenVK)
+- **Qt 6.8+** и **GLM** через Homebrew — официальный Qt-инсталлятор **не включает** Vulkan-поддержку на macOS
+- **CMake 3.20+**
+- GPU с поддержкой Metal (MoltenVK транслирует Vulkan → Metal)
+
 ## Сборка и запуск
 
-### 1. Клонирование репозитория
+### Windows
+
+#### 1. Клонирование репозитория
 
 ```bash
 git clone <repo-url>
 cd QtVulkan
 ```
 
-### 2. Конфигурация и сборка
+#### 2. Конфигурация и сборка
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -93,16 +106,49 @@ cmake --build build --config Release
 
 CMake автоматически скомпилирует `sphere.vert` / `sphere.frag` в SPIR-V через `glslc` и скопирует `.spv`-файлы рядом с исполняемым файлом.
 
-### 3. Запуск
+#### 3. Запуск
+
+```bat
+build_and_run.bat
+```
+
+Или вручную:
 
 ```bash
 ./build/Release/appQtVulkan.exe
 ```
 
-Или использовать готовый скрипт:
+---
 
-```bat
-build_and_run.bat
+### macOS
+
+#### 1. Установить Vulkan SDK
+
+Скачать с [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home#mac) и добавить в `~/.zprofile`:
+
+```bash
+echo 'source ~/VulkanSDK/<версия>/setup-env.sh' >> ~/.zprofile
+source ~/.zprofile
+```
+
+#### 2. Установить зависимости
+
+```bash
+brew install qt glm cmake
+```
+
+#### 3. Сборка и запуск одной командой
+
+```bash
+./build_and_run.sh
+```
+
+Или вручную:
+
+```bash
+cmake -B build -DCMAKE_PREFIX_PATH=/opt/homebrew
+cmake --build build --parallel
+./build/appQtVulkan.app/Contents/MacOS/appQtVulkan
 ```
 
 ## Управление

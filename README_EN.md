@@ -15,7 +15,9 @@
   <img width="12" />
   <img src="https://skillicons.dev/icons?i=windows" height="40" alt="windows logo" />
   <img width="12" />
-  <img src="https://skillicons.dev/icons?i=qt" height="40" alt="windows logo" />
+  <img src="https://skillicons.dev/icons?i=apple" height="40" alt="macOS logo" />
+  <img width="12" />
+  <img src="https://skillicons.dev/icons?i=qt" height="40" alt="qt logo" />
 </div>
 
 ###
@@ -68,6 +70,7 @@ QtVulkan/
 
 ## Requirements
 
+### Windows
 - Windows 10/11 (64-bit)
 - **Qt 6.8+** with the Quick and QuickControls2 modules
 - **Vulkan SDK** (1.0+) — provides `glslc` for shader compilation
@@ -75,16 +78,26 @@ QtVulkan/
 - **CMake 3.20+**
 - A GPU with Vulkan 1.0 support
 
+### macOS
+- macOS 12 Monterey or later
+- **Homebrew** — [brew.sh](https://brew.sh)
+- **Vulkan SDK** — [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home#mac) (includes MoltenVK)
+- **Qt 6.8+** and **GLM** via Homebrew — the official Qt installer does **not** include Vulkan support on macOS
+- **CMake 3.20+**
+- Any GPU with Metal support (MoltenVK translates Vulkan → Metal)
+
 ## Build & Run
 
-### 1. Clone the repository
+### Windows
+
+#### 1. Clone the repository
 
 ```bash
 git clone <repo-url>
 cd QtVulkan
 ```
 
-### 2. Configure and build
+#### 2. Configure and build
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -93,16 +106,49 @@ cmake --build build --config Release
 
 CMake will automatically compile `sphere.vert` / `sphere.frag` to SPIR-V with `glslc` and place the `.spv` files next to the executable.
 
-### 3. Run
+#### 3. Run
+
+```bat
+build_and_run.bat
+```
+
+Or manually:
 
 ```bash
 ./build/Release/appQtVulkan.exe
 ```
 
-Or use the provided helper script:
+---
 
-```bat
-build_and_run.bat
+### macOS
+
+#### 1. Install the Vulkan SDK
+
+Download from [vulkan.lunarg.com](https://vulkan.lunarg.com/sdk/home#mac) and add to `~/.zprofile`:
+
+```bash
+echo 'source ~/VulkanSDK/<version>/setup-env.sh' >> ~/.zprofile
+source ~/.zprofile
+```
+
+#### 2. Install dependencies
+
+```bash
+brew install qt glm cmake
+```
+
+#### 3. Build and run in one step
+
+```bash
+./build_and_run.sh
+```
+
+Or manually:
+
+```bash
+cmake -B build -DCMAKE_PREFIX_PATH=/opt/homebrew
+cmake --build build --parallel
+./build/appQtVulkan.app/Contents/MacOS/appQtVulkan
 ```
 
 ## Controls

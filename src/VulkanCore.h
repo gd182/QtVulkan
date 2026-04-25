@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "TypesData.h"
@@ -22,7 +23,8 @@ namespace vkApp {
 class VulkanCore {
 public:
     explicit VulkanCore(VkInstance instance, VkSurfaceKHR surface,
-                        uint32_t widthValue, uint32_t heightValue);
+                        uint32_t widthValue, uint32_t heightValue,
+                        std::string shaderDir = "shaders");
     ~VulkanCore();
 
     VulkanCore(const VulkanCore&) = delete;
@@ -47,6 +49,8 @@ public:
     void setFpsCallback(std::function<void(double)> cb) { fpsCallback = std::move(cb); }
 
 private:
+    std::string shaderDir;
+
     // Не владеем / Not owned
     VkInstance   instance = VK_NULL_HANDLE;
     VkSurfaceKHR surface  = VK_NULL_HANDLE;

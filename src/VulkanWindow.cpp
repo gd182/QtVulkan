@@ -2,6 +2,7 @@
 #include "VulkanCore.h"
 #include "SceneController.h"
 
+#include <QCoreApplication>
 #include <QExposeEvent>
 #include <QPlatformSurfaceEvent>
 #include <QResizeEvent>
@@ -72,11 +73,15 @@ void VulkanWindow::init() {
 
     VkSurfaceKHR surface = qvkInst->surfaceForWindow(this);
 
+    const std::string shaderDir =
+        (QCoreApplication::applicationDirPath() + "/shaders").toStdString();
+
     coreHandle = new vkApp::VulkanCore(
         qvkInst->vkInstance(),
         surface,
         static_cast<uint32_t>(width()),
-        static_cast<uint32_t>(height())
+        static_cast<uint32_t>(height()),
+        shaderDir
     );
 
     coreHandle->setFpsCallback([this](double fpsValue) {

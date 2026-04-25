@@ -107,8 +107,10 @@ namespace vkApp {
 
 // Конструктор / Constructor
 VulkanCore::VulkanCore(VkInstance instance, VkSurfaceKHR surface,
-                       uint32_t width, uint32_t height)
-    : instance(instance)
+                       uint32_t width, uint32_t height,
+                       std::string shaderDir)
+    : shaderDir(std::move(shaderDir))
+    , instance(instance)
     , surface(surface)
     , width(width)
     , height(height)
@@ -565,8 +567,8 @@ void VulkanCore::updateDescriptorSets() {
 }
 
 void VulkanCore::createPipeline() {
-    auto vertCode = readFile("shaders/sphere.vert.spv");
-    auto fragCode = readFile("shaders/sphere.frag.spv");
+    auto vertCode = readFile((shaderDir + "/sphere.vert.spv").c_str());
+    auto fragCode = readFile((shaderDir + "/sphere.frag.spv").c_str());
 
     VkShaderModule vert = createShaderModule(device, vertCode);
     VkShaderModule frag = createShaderModule(device, fragCode);
